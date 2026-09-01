@@ -145,9 +145,8 @@ async def on_voice_state_update(member, before, after):
     if not vc:
         return
         
-    # 🔒 MASTER SHIELD LOCKOUT CHECK
+    # 🔒 MASTER PROTECTION SHIELD LOCKOUT
     if member.id == bot.user.id and after.channel is None and before.channel is not None:
-        # If manual leave OR deliberate room transition is active, shut down the shield safely!
         if manual_leave.get(guild.id, False):
             return
             
@@ -182,16 +181,16 @@ async def on_message(message):
     
     msg_clean = message.content.strip().lower()
     
-    # --- 1. COME COMMAND ROUTINE (STABLE BACK-END LOCKOUT) ---
+    # --- 1. COME COMMAND ROUTINE ---
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
-            manual_leave[g_id] = True  # Hard-lock the shield to stay off during the transfer move
+            manual_leave[g_id] = True
             if message.guild.voice_client: 
                 await message.guild.voice_client.disconnect(force=True)
-                await asyncio.sleep(0.7)  # Buffer delay to clear network pipeline logs safely
+                await asyncio.sleep(0.7)
             await message.author.voice.channel.connect()
             await asyncio.sleep(0.5)
-            manual_leave[g_id] = False  # Securely lock sticky protection shield back on
+            manual_leave[g_id] = False
             await message.add_reaction("✅")
         return
 
@@ -200,16 +199,21 @@ async def on_message(message):
         if message.author.voice:
             manual_leave[g_id] = False
             persistent_channels[g_id] = message.author.voice.channel
-            if message.guild.voice_client: await message.guild.voice_client.move_to(message.author.voice.channel)
-            else: await message.author.voice.channel.connect()
+            if message.guild.voice_client: 
+                await message.guild.voice_client.move_to(message.author.voice.channel)
+            else: 
+                await message.author.voice.channel.connect()
             await ctx.send(f"🔒 **24/7 Setup Activated** in **{message.author.voice.channel.name}**.")
         return
 
-    # --- 3. MULTI-LANGUAGE PLAY AUDIO ROUTINES (p or ش) ---
+    # --- 3. MULTI-LANGUAGE PLAY AUDIO ROUTINES ---
     if cmd in ["p", "ش"]:
-        if not args: return await ctx.send("Type a song name after the command!")
-        if not ctx.author.voice: return await ctx.send("Join a voice room first!")
-        if not ctx.voice_client: await ctx.author.voice.channel.connect()
+        if not args: 
+            return await ctx.send("Type a song name after the command!")
+        if not ctx.author.voice: 
+            return await ctx.send("Join a voice room first!")
+        if not ctx.voice_client: 
+            await ctx.author.voice.channel.connect()
         manual_leave[g_id] = False
         music_queues.setdefault(g_id, [])
         try:
@@ -221,32 +225,32 @@ async def on_message(message):
                 current_songs[g_id] = player
                 ctx.voice_client.play(player, after=lambda e: play_next(ctx))
                 await ctx.send(embed=create_music_embed(player), view=MusicControlView(ctx))
-        except Exception as e: await ctx.send(f"Error: {e}")
+        except Exception as e: 
+            await ctx.send(f"Error: {e}")
         return
 
-    # --- 4. MULTI-LANGUAGE SKIP TRACK ROUTINES (s or س) ---
+    # --- 4. MULTI-LANGUAGE SKIP TRACK ROUTINES ---
     if cmd in ["s", "س"]:
         if ctx.voice_client and ctx.voice_client.is_playing(): 
             ctx.voice_client.stop()
             await message.add_reaction("⏭️")
         return
 
-    # --- 5. MULTI-LANGUAGE PAUSE STREAM ROUTINES (stop, pause, وقف) ---
+    # --- 5. MULTI-LANGUAGE PAUSE STREAM ROUTINES ---
     if cmd in ["stop", "pause", "وقف"]:
         if ctx.voice_client and ctx.voice_client.is_playing(): 
             ctx.voice_client.pause()
             await message.add_reaction("⏸️")
         return
 
-    # --- 6. MULTI-LANGUAGE PLAYBACK RESUME ROUTINES (con, resume, كمل) ---
+    # --- 6. MULTI-LANGUAGE PLAYBACK RESUME ROUTINES ---
     if cmd in ["con", "continue", "resume", "كمل"]:
         if ctx.voice_client and ctx.voice_client.is_paused(): 
             ctx.voice_client.resume()
             await message.add_reaction("▶️")
         return
 
-
-    # --- 7. LIVE CHAT VOLUMETRIC CHANGES (v 0-200) ---
+    # --- 7. LIVE CHAT VOLUMETRIC CHANGES ---
     if cmd == "v":
         if ctx.voice_client and g_id in current_songs:
             match = re.search(r'\d+', args)
@@ -258,7 +262,7 @@ async def on_message(message):
                 await ctx.send("Volume range must be between 0 and 200.")
         return
 
-    # --- 8. DUAL-LANGUAGE LEAVE ROUTINES (leave or خروج) ---
+    # --- 8. DUAL-LANGUAGE LEAVE ROUTINES ---
     if cmd in ["leave", "خروج"]:
         if ctx.voice_client and ctx.author.voice and ctx.author.voice.channel == ctx.voice_client.channel:
             music_queues.pop(g_id, None)
@@ -273,5 +277,4 @@ async def on_message(message):
 
 if __name__ == '__main__':
     Thread(target=run_web_server).start()
-    # ADD YOUR SECRET DISCORD TOKEN AS AN ENVIRONMENT VARIABLE VALUED UNDER 'DISCORD_TOKEN' IN RENDER:
     bot.run(os.environ.get("DISCORD_TOKEN"))
