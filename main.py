@@ -64,7 +64,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
         data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
         if 'entries' in data:
             if data['entries']:
-                data = data['entries']
+                data = data['entries'][0]
         return cls(discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS), data=data, user=user)
 
     @classmethod
@@ -179,13 +179,13 @@ async def on_message(message):
     
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
-            manual_leave[g_id] = True
+            manual_leave[g_id] = True  # Disables the protective shield during this move
             if message.guild.voice_client: 
                 await message.guild.voice_client.disconnect(force=True)
                 await asyncio.sleep(0.5)
             await message.author.voice.channel.connect()
             await asyncio.sleep(0.2)
-            manual_leave[g_id] = False
+            manual_leave[g_id] = False  # Re-enables the shield once connected safely
             await message.add_reaction("✅")
         return
 
@@ -259,6 +259,4 @@ async def on_message(message):
 
 if __name__ == '__main__':
     Thread(target=run_web_server).start()
-    # ADD YOUR BOT TOKEN TO ENVIRONMENT VARIABLES TAB IN RENDER DASHBOARD:
     bot.run(os.environ.get("DISCORD_TOKEN"))
-
