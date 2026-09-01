@@ -207,22 +207,23 @@ async def on_message(message):
             ctx.voice_client.pause()
             await message.add_reaction("⏸️")
         return
-    if cmd in ["con", "continue", "resume", "كمل"]:
+        if cmd in ["con", "continue", "resume", "كمل"]:
         if ctx.voice_client and ctx.voice_client.is_paused(): 
-            ctx.voice_client.resume()
-            await message.add_reaction("▶️")
-        return
-    if cmd == "v":
+        ctx.voice_client.resume()
+        await message.add_reaction("▶️")
+    return
+        if cmd == "v":
         if ctx.voice_client and ctx.guild.id in current_songs:
             match = re.search(r'\d+', args)
             vol = int(match.group()) if match else 100
-            if 0 <= vol <= 200: 
+            if 0 <= vol <= 200:
                 current_songs[ctx.guild.id].volume = vol / 100
                 await message.add_reaction("🔊")
-            else: 
+            else:
                 await ctx.send("Volume range must be between 0 and 200.")
         return
-       if cmd in ["leave", "خروج"]:
+
+    if cmd in ["leave", "خروج"]:
         if ctx.voice_client and ctx.author.voice and ctx.author.voice.channel == ctx.voice_client.channel:
             g_id = ctx.guild.id
             music_queues.pop(g_id, None)
@@ -232,6 +233,7 @@ async def on_message(message):
             await ctx.voice_client.disconnect()
             await message.add_reaction("✅")
         return
+
 
     await bot.process_commands(message)
 
