@@ -68,18 +68,25 @@ async def on_ready(): print(f"Logged in successfully as {bot.user.name}")
 
 @bot.event
 async def on_voice_state_update(member, before, after):
-    guild = member.guild; vc = guild.voice_client; if not vc: return
+    guild = member.guild
+    vc = guild.voice_client
+    if not vc:
+        return
     if member.id == bot.user.id and after.channel is None and before.channel is not None:
-        if manual_leave.get(guild.id, False): manual_leave[guild.id] = False; return
+        if manual_leave.get(guild.id, False): 
+            manual_leave[guild.id] = False
+            return
         if guild.id in persistent_channels or guild.id in current_songs or guild.id in music_queues:
             target = persistent_channels.get(guild.id, before.channel)
-            await asyncio.sleep(0.5); try: await target.connect()
+            await asyncio.sleep(0.5)
+            try: await target.connect()
             except: pass
         return
     if vc and vc.channel and len([m for m in vc.channel.members if not m.bot]) == 0 and guild.id not in persistent_channels:
         await asyncio.sleep(2)
         if len([m for m in vc.channel.members if not m.bot]) == 0:
             music_queues.pop(guild.id, None); current_songs.pop(guild.id, None); manual_leave[guild.id] = True; await vc.disconnect()
+
 
 @bot.event
 async def on_message(message):
