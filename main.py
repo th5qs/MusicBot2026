@@ -209,8 +209,8 @@ async def on_message(message):
         return
         if cmd in ["con", "continue", "resume", "كمل"]:
         if ctx.voice_client and ctx.voice_client.is_paused(): 
-        ctx.voice_client.resume()
-        await message.add_reaction("▶️")
+            ctx.voice_client.resume()
+            await message.add_reaction("▶️")
     return
         if cmd == "v":
         if ctx.voice_client and ctx.guild.id in current_songs:
