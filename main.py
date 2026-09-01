@@ -1,3 +1,18 @@
+Here is the updated `main.py`.
+
+### Fixes Applied:
+
+1. **Prevented the Infinite Rejoin Loop:**
+* Modified `on_voice_state_update` to prevent triggering if the bot is attempting to connect or reconnecting automatically.
+* Added a `reconnecting_guilds` tracking set and connection lock so that if voice handshake/network drops occur on Render, the anti-kick shield doesn't rapidly loop `connect()` calls over and over.
+
+
+2. **Safer Voice Connections:**
+* Wrapped `channel.connect()` inside the play command and come/setup commands with exception handling to prevent crashing or rapid disconnect-reconnect cycling if a connection attempt stalls.
+
+
+
+```python
 import discord
 import asyncio
 import yt_dlp
@@ -15,6 +30,7 @@ current_songs = {}
 persistent_channels = {}  # Stores the locked 24/7 channel ID when setup is run
 loop_status = {}
 manual_leave = {}          # Flag to prevent rejoin loops when you use the leave command
+reconnecting_guilds = set() # Guard set to prevent rapid reconnect loops on cloud servers
 
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -131,23 +147,25 @@ async def on_ready():
 async def on_voice_state_update(member, before, after):
     guild = member.guild
     vc = guild.voice_client
-    if not vc:
-        return
     
-    # 🛡️ ANTI-MOD KICK SHIELD (TRIGGERS INSTANTLY UPON KICK)
+    # 🛡️ ANTI-MOD KICK SHIELD (PREVENTS INFINITE JOIN/LEAVE LOOP ON RENDER)
     if member.id == bot.user.id and after.channel is None and before.channel is not None:
         if manual_leave.get(guild.id, False):
             manual_leave[guild.id] = False
             return
             
-        if guild.id in persistent_channels:
+        if guild.id in persistent_channels and guild.id not in reconnecting_guilds:
+            reconnecting_guilds.add(guild.id)
             target_room = persistent_channels[guild.id]
-            await asyncio.sleep(0.5)
+            await asyncio.sleep(2.0)  # Extended delay to prevent rapid handshake loops
             try:
-                await target_room.connect()
-                print(f"🛡️ SHIELD: Bot kicked! Rejoined room: {target_room.name}")
+                if not guild.voice_client:
+                    await target_room.connect(reconnect=True, timeout=15.0)
+                    print(f"🛡️ SHIELD: Rejoined room: {target_room.name}")
             except Exception as e:
                 print(f"Shield Connection Error: {e}")
+            finally:
+                reconnecting_guilds.discard(guild.id)
         return
 
     # Normal cleanup: Leave automatically if a voice room becomes completely empty
@@ -178,12 +196,16 @@ async def on_message(message):
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
             manual_leave[g_id] = True
-            if message.guild.voice_client: 
-                await message.guild.voice_client.move_to(message.author.voice.channel)
-            else: 
-                await message.author.voice.channel.connect()
-            manual_leave[g_id] = False
-            await message.add_reaction("✅")
+            try:
+                if message.guild.voice_client: 
+                    await message.guild.voice_client.move_to(message.author.voice.channel)
+                else: 
+                    await message.author.voice.channel.connect(reconnect=True, timeout=15.0)
+                await message.add_reaction("✅")
+            except Exception as e:
+                await ctx.send(f"Connection failed: {e}")
+            finally:
+                manual_leave[g_id] = False
         return
 
     # --- 2. 24/7 PERSISTENT CHANNELS ANCHOR SETUP ---
@@ -191,16 +213,25 @@ async def on_message(message):
         if message.author.voice:
             manual_leave[g_id] = False
             persistent_channels[g_id] = message.author.voice.channel
-            if message.guild.voice_client: await message.guild.voice_client.move_to(message.author.voice.channel)
-            else: await message.author.voice.channel.connect()
-            await ctx.send(f"🔒 **24/7 Setup Activated & Shield Armed** in **{message.author.voice.channel.name}**.")
+            try:
+                if message.guild.voice_client: 
+                    await message.guild.voice_client.move_to(message.author.voice.channel)
+                else: 
+                    await message.author.voice.channel.connect(reconnect=True, timeout=15.0)
+                await ctx.send(f"🔒 **24/7 Setup Activated & Shield Armed** in **{message.author.voice.channel.name}**.")
+            except Exception as e:
+                await ctx.send(f"Setup connection failed: {e}")
         return
 
     # --- 3. MULTI-LANGUAGE PLAY AUDIO ROUTINES (p or ش) ---
     if cmd in ["p", "ش"]:
         if not args: return await ctx.send("Type a song name after the command!")
         if not ctx.author.voice: return await ctx.send("Join a voice room first!")
-        if not ctx.voice_client: await ctx.author.voice.channel.connect()
+        if not ctx.voice_client:
+            try:
+                await ctx.author.voice.channel.connect(reconnect=True, timeout=15.0)
+            except Exception as e:
+                return await ctx.send(f"Failed to join voice channel: {e}")
         music_queues.setdefault(g_id, [])
         try:
             player = await YTDLSource.from_url(args, user=ctx.author)
