@@ -90,16 +90,17 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_message(message):
-       if message.author.bot: 
+    if message.author.bot:
         return
-        
+
     parts = message.content.strip().split(maxsplit=1)
-    if not parts: 
+    if not parts:
         return
-        
+
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
+
 
     if bot.user.mentioned_in(message) and "come" in message.content.lower():
         if message.author.voice:
