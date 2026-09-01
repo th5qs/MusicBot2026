@@ -210,9 +210,22 @@ async def on_voice_state_update(member, before, after):
 async def on_message(message):
     if message.author.bot:
         return
+
+    # FIX: Catch your mention immediately before splitting command strings!
+    if bot.user.mentioned_in(message) and "come" in message.content.lower():
+        if message.author.voice:
+            manual_leave[message.guild.id] = False
+            if message.guild.voice_client:
+                await message.guild.voice_client.move_to(message.author.voice.channel)
+            else:
+                await message.author.voice.channel.connect()
+            await message.add_reaction("✅")
+        return
+
     parts = message.content.strip().split(maxsplit=1)
     if not parts:
         return
+
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
