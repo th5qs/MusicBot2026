@@ -6,16 +6,15 @@ import os
 from discord.ext import commands
 from aiohttp import web
 
-intents = discord.Intents.all()
+intents = discord.Intents.default()
+intents.message_content = True
+intents.voice_states = True
+intents.guilds = True
+
 bot = commands.Bot(command_prefix="", intents=intents)
 
-# Core music memory tracks
 music_queues = {}
 current_songs = {}
-persistent_channels = {}  # Stores the locked 24/7 channel ID when setup is run
-loop_status = {}
-manual_leave = {}          # Flag to prevent rejoin loops when you use the leave command
-reconnecting_guilds = set() # Guard set to prevent rapid reconnect loops
 
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -25,7 +24,6 @@ YTDL_OPTIONS = {
     'quiet': True,
     'default_search': 'auto',
     'source_address': '0.0.0.0',
-    'extract_flat': False,
     'skip_download': True
 }
 
@@ -55,22 +53,8 @@ class YTDLSource(discord.PCMVolumeTransformer):
             data = data[0]
         return cls(discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS), data=data, user=user)
 
-    @classmethod
-    def rebuild_with_timestamp(cls, data, seconds, user):
-        opts = FFMPEG_OPTIONS.copy()
-        opts['before_options'] += f' -ss {seconds}'
-        return cls(discord.FFmpegPCMAudio(data['url'], **opts), data=data, user=user)
-
 def play_next(ctx):
     g_id = ctx.guild.id
-    if loop_status.get(g_id, False) and g_id in current_songs:
-        old = current_songs[g_id]
-        new = YTDLSource.rebuild_with_timestamp(old.data, 0, old.user)
-        new.volume = old.volume
-        current_songs[g_id] = new
-        ctx.voice_client.play(new, after=lambda e: play_next(ctx))
-        return
-
     if g_id in music_queues and music_queues[g_id]:
         next_song = music_queues[g_id].pop(0)
         current_songs[g_id] = next_song
@@ -84,19 +68,12 @@ def create_music_embed(player):
     embed.add_field(name="Playing Song", value=f"**[{player.title}](https://youtube.com)**", inline=False)
     embed.add_field(name="Song Duration", value=f"**{player.duration_str}**", inline=False)
     embed.set_footer(text=player.user.display_name, icon_url=player.user.display_avatar.url)
-    embed.set_thumbnail(url="https://imgur.com")
     return embed
 
 class MusicControlView(discord.ui.View):
     def __init__(self, ctx):
         super().__init__(timeout=None)
         self.ctx = ctx
-
-    @discord.ui.button(label="🔁", style=discord.ButtonStyle.secondary)
-    async def loop_btn(self, i: discord.Interaction, b: discord.ui.Button):
-        g_id = self.ctx.guild.id
-        loop_status[g_id] = not loop_status.get(g_id, False)
-        await i.response.send_message(f"🔁 Loop: **{'ENABLED' if loop_status[g_id] else 'DISABLED'}**.", delete_after=2)
 
     @discord.ui.button(label="🔊-", style=discord.ButtonStyle.secondary)
     async def vol_down(self, i: discord.Interaction, b: discord.ui.Button):
@@ -125,45 +102,8 @@ class MusicControlView(discord.ui.View):
 @bot.event
 async def on_ready():
     print(f"========================================")
-    print(f"SUCCESS: {bot.user.name} IS NOW CLOUD ONLINE 24/7!")
+    print(f"SUCCESS: {bot.user.name} IS NOW ONLINE!")
     print(f"========================================")
-
-@bot.event
-async def on_voice_state_update(member, before, after):
-    guild = member.guild
-    
-    # 🛡️ ANTI-MOD KICK SHIELD (STRICT CHECK TO PREVENT LOOPS)
-    if member.id == bot.user.id:
-        # Ignore normal channel switches or internal reconnection handshakes
-        if before.channel is None or after.channel is not None:
-            return
-
-        if manual_leave.get(guild.id, False):
-            manual_leave[guild.id] = False
-            return
-            
-        if guild.id in persistent_channels and guild.id not in reconnecting_guilds:
-            reconnecting_guilds.add(guild.id)
-            target_room = persistent_channels[guild.id]
-            await asyncio.sleep(3.0)  # Safe delay for Gateway sync
-            try:
-                if not guild.voice_client or not guild.voice_client.is_connected():
-                    await target_room.connect(reconnect=True, timeout=15.0)
-                    print(f"🛡️ SHIELD: Rejoined room: {target_room.name}")
-            except Exception as e:
-                print(f"Shield Connection Error: {e}")
-            finally:
-                reconnecting_guilds.discard(guild.id)
-        return
-
-    # Normal cleanup: Leave automatically if a voice room becomes completely empty
-    vc = guild.voice_client
-    if vc and vc.channel and len([m for m in vc.channel.members if not m.bot]) == 0 and guild.id not in persistent_channels:
-        await asyncio.sleep(2)
-        if len([m for m in vc.channel.members if not m.bot]) == 0:
-            music_queues.pop(guild.id, None)
-            current_songs.pop(guild.id, None)
-            await vc.disconnect()
 
 @bot.event
 async def on_message(message):
@@ -178,13 +118,11 @@ async def on_message(message):
     args = parts[1] if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
     g_id = message.guild.id
-    
     msg_clean = message.content.strip().lower()
     
-    # --- 1. COME COMMAND ROUTINE ---
+    # --- COME COMMAND ---
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
-            manual_leave[g_id] = True
             try:
                 if message.guild.voice_client: 
                     await message.guild.voice_client.move_to(message.author.voice.channel)
@@ -193,26 +131,9 @@ async def on_message(message):
                 await message.add_reaction("✅")
             except Exception as e:
                 await ctx.send(f"Connection failed: {e}")
-            finally:
-                manual_leave[g_id] = False
         return
 
-    # --- 2. 24/7 PERSISTENT CHANNELS ANCHOR SETUP ---
-    if "setup" in cmd and bot.user.mentioned_in(message):
-        if message.author.voice:
-            manual_leave[g_id] = False
-            persistent_channels[g_id] = message.author.voice.channel
-            try:
-                if message.guild.voice_client: 
-                    await message.guild.voice_client.move_to(message.author.voice.channel)
-                else: 
-                    await message.author.voice.channel.connect(reconnect=True, timeout=15.0)
-                await ctx.send(f"🔒 **24/7 Setup Activated & Shield Armed** in **{message.author.voice.channel.name}**.")
-            except Exception as e:
-                await ctx.send(f"Setup connection failed: {e}")
-        return
-
-    # --- 3. MULTI-LANGUAGE PLAY AUDIO ROUTINES (p or ش) ---
+    # --- PLAY COMMAND (p / ش) ---
     if cmd in ["p", "ش"]:
         if not args: return await ctx.send("Type a song name after the command!")
         if not ctx.author.voice: return await ctx.send("Join a voice room first!")
@@ -234,58 +155,42 @@ async def on_message(message):
         except Exception as e: await ctx.send(f"Error: {e}")
         return
 
-    # --- 4. MULTI-LANGUAGE SKIP TRACK ROUTINES (s or س) ---
+    # --- SKIP COMMAND (s / س) ---
     if cmd in ["s", "س"]:
         if ctx.voice_client and ctx.voice_client.is_playing(): 
             ctx.voice_client.stop()
             await message.add_reaction("⏭️")
         return
 
-    # --- 5. MULTI-LANGUAGE PAUSE STREAM ROUTINES (stop, pause, وقف) ---
+    # --- PAUSE COMMAND (stop / pause / وقف) ---
     if cmd in ["stop", "pause", "وقف"]:
         if ctx.voice_client and ctx.voice_client.is_playing(): 
             ctx.voice_client.pause()
             await message.add_reaction("⏸️")
         return
 
-    # --- 6. MULTI-LANGUAGE PLAYBACK RESUME ROUTINES (con, resume, كمل) ---
+    # --- RESUME COMMAND (con / resume / كمل) ---
     if cmd in ["con", "continue", "resume", "كمل"]:
         if ctx.voice_client and ctx.voice_client.is_paused(): 
             ctx.voice_client.resume()
             await message.add_reaction("▶️")
         return
 
-    # --- 7. LIVE CHAT VOLUMETRIC CHANGES (v 0-200) ---
-    if cmd == "v":
-        if ctx.voice_client and g_id in current_songs:
-            match = re.search(r'\d+', args)
-            vol = int(match.group()) if match else 100
-            if 0 <= vol <= 200:
-                current_songs[g_id].volume = vol / 100
-                await message.add_reaction("🔊")
-            else:
-                await ctx.send("Volume range must be between 0 and 200.")
-        return
-
-    # --- 8. DUAL-LANGUAGE LEAVE ROUTINES (leave or خروج) ---
+    # --- LEAVE COMMAND (leave / خروج) ---
     if cmd in ["leave", "خروج"]:
-        if ctx.voice_client and ctx.author.voice and ctx.author.voice.channel == ctx.voice_client.channel:
+        if ctx.voice_client:
             music_queues.pop(g_id, None)
             current_songs.pop(g_id, None)
-            persistent_channels.pop(g_id, None)
-            manual_leave[g_id] = True
             await ctx.voice_client.disconnect()
             await message.add_reaction("✅")
         return
 
     await bot.process_commands(message)
 
-# Web Server Ping Handler for Render Port Check
 async def handle_ping(request):
     return web.Response(text="Bot is running!")
 
 async def main():
-    # Setup HTTP Web Server for Render
     app = web.Application()
     app.router.add_get('/', handle_ping)
     runner = web.AppRunner(app)
@@ -294,14 +199,10 @@ async def main():
     port = int(os.environ.get("PORT", 10000))
     site = web.TCPSite(runner, '0.0.0.0', port)
     await site.start()
-    print(f"Server started on port {port}")
 
-    # Start Discord Bot
     token = os.environ.get("DISCORD_TOKEN")
     if token:
         await bot.start(token)
-    else:
-        print("ERROR: DISCORD_TOKEN is missing from Environment Variables!")
 
 if __name__ == '__main__':
     asyncio.run(main())
