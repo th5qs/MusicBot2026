@@ -156,9 +156,11 @@ async def on_message(message):
     if not parts:
         return
         
-    cmd = parts.lower()
-    args = parts if len(parts) > 1 else ""
+    # FIXED: Reads the first item out of the list before lowercasing!
+    cmd = parts[0].lower()
+    args = parts[1] if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
+
     
     if "setup" in cmd and bot.user.mentioned_in(message):
         if message.author.voice:
