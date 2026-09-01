@@ -1,4 +1,3 @@
-
 import discord
 import asyncio
 import yt_dlp
@@ -16,7 +15,7 @@ current_songs = {}
 persistent_channels = {}  # Stores the locked 24/7 channel ID when setup is run
 loop_status = {}
 manual_leave = {}          # Flag to prevent rejoin loops when you use the leave command
-reconnecting_guilds = set() # Guard set to prevent rapid reconnect loops on cloud servers
+reconnecting_guilds = set() # Guard set to prevent rapid reconnect loops
 
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -132,10 +131,13 @@ async def on_ready():
 @bot.event
 async def on_voice_state_update(member, before, after):
     guild = member.guild
-    vc = guild.voice_client
     
-    # 🛡️ ANTI-MOD KICK SHIELD (PREVENTS INFINITE JOIN/LEAVE LOOP ON RENDER)
-    if member.id == bot.user.id and after.channel is None and before.channel is not None:
+    # 🛡️ ANTI-MOD KICK SHIELD (STRICT CHECK TO PREVENT LOOPS)
+    if member.id == bot.user.id:
+        # Ignore normal channel switches or internal reconnection handshakes
+        if before.channel is None or after.channel is not None:
+            return
+
         if manual_leave.get(guild.id, False):
             manual_leave[guild.id] = False
             return
@@ -143,9 +145,9 @@ async def on_voice_state_update(member, before, after):
         if guild.id in persistent_channels and guild.id not in reconnecting_guilds:
             reconnecting_guilds.add(guild.id)
             target_room = persistent_channels[guild.id]
-            await asyncio.sleep(2.0)  # Extended delay to prevent rapid handshake loops
+            await asyncio.sleep(3.0)  # Safe delay for Gateway sync
             try:
-                if not guild.voice_client:
+                if not guild.voice_client or not guild.voice_client.is_connected():
                     await target_room.connect(reconnect=True, timeout=15.0)
                     print(f"🛡️ SHIELD: Rejoined room: {target_room.name}")
             except Exception as e:
@@ -155,6 +157,7 @@ async def on_voice_state_update(member, before, after):
         return
 
     # Normal cleanup: Leave automatically if a voice room becomes completely empty
+    vc = guild.voice_client
     if vc and vc.channel and len([m for m in vc.channel.members if not m.bot]) == 0 and guild.id not in persistent_channels:
         await asyncio.sleep(2)
         if len([m for m in vc.channel.members if not m.bot]) == 0:
@@ -213,7 +216,7 @@ async def on_message(message):
     if cmd in ["p", "ش"]:
         if not args: return await ctx.send("Type a song name after the command!")
         if not ctx.author.voice: return await ctx.send("Join a voice room first!")
-        if not ctx.voice_client:
+        if not ctx.voice_client or not ctx.voice_client.is_connected():
             try:
                 await ctx.author.voice.channel.connect(reconnect=True, timeout=15.0)
             except Exception as e:
