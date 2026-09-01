@@ -152,7 +152,7 @@ async def on_message(message):
         
     msg_clean = message.content.strip().lower()
     
-    # MASTER INTERCEPT GATEWAY: Captures user id tags, text nicknames, and summons strings
+    # 🌟 FIXED INDEPENDENT COME OVERRIDE SYSTEM
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
             manual_leave[message.guild.id] = False
@@ -166,6 +166,7 @@ async def on_message(message):
     parts = message.content.strip().split(maxsplit=1)
     if not parts: 
         return
+        
     cmd = parts[0].lower()
     args = parts[1] if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
@@ -243,17 +244,16 @@ async def on_message(message):
             await ctx.voice_client.disconnect()
             await message.add_reaction("✅")
         return
+
     await bot.process_commands(message)
 
 @bot.command(name='play_cmd')
 async def play_cmd(ctx, *, search: str): pass
-
 @bot.command(name='skip_cmd')
 async def skip_cmd(ctx): pass
-
 @bot.command(name='leave_cmd')
 async def leave_cmd(ctx): pass
 
-if os.name == 'main':
+if __name__ == '__main__':
     Thread(target=run_web_server).start()
     bot.run(os.environ.get("DISCORD_TOKEN"))
