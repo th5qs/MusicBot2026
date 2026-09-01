@@ -3,32 +3,17 @@ import asyncio
 import yt_dlp
 import re
 import os
-import http.server
-import socketserver
 from discord.ext import commands
-from threading import Thread
-
-# --- Built-in Lightweight Web Port Listener for 24/7 Render Free Tier ---
-class WebServer(http.server.SimpleHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-type", "text/plain")
-        self.end_headers()
-        self.wfile.write(b"Bot is Online 24/7!")
-
-def run_web_server():
-    port = int(os.environ.get('PORT', 8080))
-    with socketserver.TCPServer(("0.0.0.0", port), WebServer) as httpd:
-        httpd.serve_forever()
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
 
-# Core track memory pools
+# Core music memory tracks
 music_queues = {}
 current_songs = {}
-persistent_channels = {}
+persistent_channels = {}  # Stores the locked 24/7 channel ID when setup is run
 loop_status = {}
+manual_leave = {}          # Flag to prevent rejoin loops when you use the leave command
 
 YTDL_OPTIONS = {
     'format': 'bestaudio/best',
@@ -62,8 +47,10 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, user):
         data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-        if 'entries' in data and data['entries']:
-            data = data['entries']
+        if isinstance(data, dict) and 'entries' in data and data['entries']:
+            data = data['entries'][0]
+        elif isinstance(data, list) and data:
+            data = data[0]
         return cls(discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS), data=data, user=user)
 
     @classmethod
@@ -135,7 +122,9 @@ class MusicControlView(discord.ui.View):
 
 @bot.event
 async def on_ready():
-    print(f"Logged in successfully as {bot.user.name}")
+    print(f"========================================")
+    print(f"SUCCESS: {bot.user.name} IS NOW CLOUD ONLINE 24/7!")
+    print(f"========================================")
 
 @bot.event
 async def on_voice_state_update(member, before, after):
@@ -143,8 +132,25 @@ async def on_voice_state_update(member, before, after):
     vc = guild.voice_client
     if not vc:
         return
-    # Leave automatically if the voice room becomes completely empty
-    if vc and vc.channel and len([m for m in vc.channel.members if not m.bot]) == 0:
+    
+    # 🛡️ ANTI-MOD KICK SHIELD (TRIGGERS INSTANTLY UPON KICK)
+    if member.id == bot.user.id and after.channel is None and before.channel is not None:
+        if manual_leave.get(guild.id, False):
+            manual_leave[guild.id] = False
+            return
+            
+        if guild.id in persistent_channels:
+            target_room = persistent_channels[guild.id]
+            await asyncio.sleep(0.5)
+            try:
+                await target_room.connect()
+                print(f"🛡️ SHIELD: Bot kicked! Rejoined room: {target_room.name}")
+            except Exception as e:
+                print(f"Shield Connection Error: {e}")
+        return
+
+    # Normal cleanup: Leave automatically if a voice room becomes completely empty
+    if vc and vc.channel and len([m for m in vc.channel.members if not m.bot]) == 0 and guild.id not in persistent_channels:
         await asyncio.sleep(2)
         if len([m for m in vc.channel.members if not m.bot]) == 0:
             music_queues.pop(guild.id, None)
@@ -167,23 +173,26 @@ async def on_message(message):
     
     msg_clean = message.content.strip().lower()
     
-    # --- 1. COME COMMAND ROUTINE (SMOOTH TRANSITION) ---
+    # --- 1. COME COMMAND ROUTINE ---
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
+            manual_leave[g_id] = True
             if message.guild.voice_client: 
                 await message.guild.voice_client.move_to(message.author.voice.channel)
             else: 
                 await message.author.voice.channel.connect()
+            manual_leave[g_id] = False
             await message.add_reaction("✅")
         return
 
     # --- 2. 24/7 PERSISTENT CHANNELS ANCHOR SETUP ---
     if "setup" in cmd and bot.user.mentioned_in(message):
         if message.author.voice:
+            manual_leave[g_id] = False
             persistent_channels[g_id] = message.author.voice.channel
             if message.guild.voice_client: await message.guild.voice_client.move_to(message.author.voice.channel)
             else: await message.author.voice.channel.connect()
-            await ctx.send(f"🔒 **24/7 Setup Activated** in **{message.author.voice.channel.name}**.")
+            await ctx.send(f"🔒 **24/7 Setup Activated & Shield Armed** in **{message.author.voice.channel.name}**.")
         return
 
     # --- 3. MULTI-LANGUAGE PLAY AUDIO ROUTINES (p or ش) ---
@@ -243,6 +252,7 @@ async def on_message(message):
             music_queues.pop(g_id, None)
             current_songs.pop(g_id, None)
             persistent_channels.pop(g_id, None)
+            manual_leave[g_id] = True
             await ctx.voice_client.disconnect()
             await message.add_reaction("✅")
         return
@@ -250,5 +260,4 @@ async def on_message(message):
     await bot.process_commands(message)
 
 if __name__ == '__main__':
-    Thread(target=run_web_server).start()
     bot.run(os.environ.get("DISCORD_TOKEN"))
