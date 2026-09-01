@@ -1,18 +1,4 @@
-Here is the updated `main.py`.
 
-### Fixes Applied:
-
-1. **Prevented the Infinite Rejoin Loop:**
-* Modified `on_voice_state_update` to prevent triggering if the bot is attempting to connect or reconnecting automatically.
-* Added a `reconnecting_guilds` tracking set and connection lock so that if voice handshake/network drops occur on Render, the anti-kick shield doesn't rapidly loop `connect()` calls over and over.
-
-
-2. **Safer Voice Connections:**
-* Wrapped `channel.connect()` inside the play command and come/setup commands with exception handling to prevent crashing or rapid disconnect-reconnect cycling if a connection attempt stalls.
-
-
-
-```python
 import discord
 import asyncio
 import yt_dlp
