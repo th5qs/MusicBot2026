@@ -155,13 +155,22 @@ async def on_message(message):
     # 🌟 FIXED INDEPENDENT COME OVERRIDE SYSTEM
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
-            manual_leave[message.guild.id] = False
-            if message.guild.voice_client: 
+            g_id = message.guild.id
+            manual_leave[g_id] = False
+            
+            # This line tells the shield: "I am moving on purpose, do not drag me back!"
+            if message.guild.voice_client:
+                # Set a temporary flag in our manual leave tracker to allow a safe transition
+                manual_leave[g_id] = True 
                 await message.guild.voice_client.move_to(message.author.voice.channel)
-            else: 
+                await asyncio.sleep(0.5)
+                manual_leave[g_id] = False
+            else:
                 await message.author.voice.channel.connect()
+                
             await message.add_reaction("✅")
         return
+
 
     parts = message.content.strip().split(maxsplit=1)
     if not parts: 
