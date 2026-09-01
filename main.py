@@ -2,7 +2,7 @@ import discord, asyncio, yt_dlp, re, os, http.server, socketserver
 from discord.ext import commands
 from threading import Thread
 
-# --- BUILT-IN PORT BINDING FOR 24/7 RENDER FREE TIER ---
+# --- Built-in Web Port Server For 24/7 Render Free Tier ---
 class WebServer(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         self.send_response(200)
@@ -17,23 +17,10 @@ def run_web_server():
 
 intents = discord.Intents.all()
 bot = commands.Bot(command_prefix="", intents=intents)
+music_queues, current_songs, persistent_channels, loop_status, manual_leave = {}, {}, {}, {}, {}
 
-# Persistent global cloud states
-music_queues = {}
-current_songs = {}
-persistent_channels = {}
-loop_status = {}
-manual_leave = {}
-
-YTDL_OPTIONS = {
-    'format': 'bestaudio/best', 'noplaylist': True, 'nocheckcertificate': True,
-    'ignoreerrors': False, 'quiet': True, 'no_warnings': True, 'default_search': 'auto',
-    'source_address': '0.0.0.0', 'extract_flat': False, 'skip_download': True
-}
-FFMPEG_OPTIONS = {
-    'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 1048576 -analyzeduration 5000000',
-    'options': '-vn -b:a 128k'
-}
+YTDL_OPTIONS = {'format': 'bestaudio/best', 'noplaylist': True, 'nocheckcertificate': True, 'ignoreerrors': False, 'quiet': True, 'no_warnings': True, 'default_search': 'auto', 'source_address': '0.0.0.0', 'extract_flat': False, 'skip_download': True}
+FFMPEG_OPTIONS = {'before_options': '-reconnect 1 -reconnect_streamed 1 -reconnect_delay_max 5 -probesize 1048576 -analyzeduration 5000000', 'options': '-vn -b:a 128k'}
 ytdl = yt_dlp.YoutubeDL(YTDL_OPTIONS)
 
 class YTDLSource(discord.PCMVolumeTransformer):
@@ -47,7 +34,7 @@ class YTDLSource(discord.PCMVolumeTransformer):
     @classmethod
     async def from_url(cls, url, *, user):
         data = await bot.loop.run_in_executor(None, lambda: ytdl.extract_info(url, download=False))
-        if 'entries' in data and data['entries']: 
+        if 'entries' in data and data['entries']:
             data = data['entries']
         return cls(discord.FFmpegPCMAudio(data['url'], **FFMPEG_OPTIONS), data=data, user=user)
 
@@ -71,7 +58,7 @@ def play_next(ctx):
         current_songs[g_id] = next_song
         ctx.voice_client.play(next_song, after=lambda e: play_next(ctx))
         asyncio.run_coroutine_threadsafe(ctx.send(embed=create_music_embed(next_song), view=MusicControlView(ctx)), bot.loop)
-    else: 
+    else:
         current_songs.pop(g_id, None)
 
 def create_music_embed(player):
@@ -83,12 +70,12 @@ def create_music_embed(player):
     return embed
 
 class MusicControlView(discord.ui.View):
-    def __init__(self, ctx): 
+    def __init__(self, ctx):
         super().__init__(timeout=None)
         self.ctx = ctx
 
     @discord.ui.button(label="🔁", style=discord.ButtonStyle.secondary)
-    async def loop_btn(self, i: discord.Interaction, b: discord.ui.Button): 
+    async def loop_btn(self, i: discord.Interaction, b: discord.ui.Button):
         g_id = self.ctx.guild.id
         loop_status[g_id] = not loop_status.get(g_id, False)
         await i.response.send_message(f"🔁 Loop: **{'ENABLED' if loop_status[g_id] else 'DISABLED'}**.", delete_after=2)
@@ -96,7 +83,7 @@ class MusicControlView(discord.ui.View):
     @discord.ui.button(label="🔊-", style=discord.ButtonStyle.secondary)
     async def vol_down(self, i: discord.Interaction, b: discord.ui.Button):
         await i.response.defer()
-        if self.ctx.guild.id in current_songs: 
+        if self.ctx.guild.id in current_songs:
             current_songs[self.ctx.guild.id].volume = max(0.0, current_songs[self.ctx.guild.id].volume - 0.2)
 
     @discord.ui.button(label="⏸️", style=discord.ButtonStyle.secondary)
@@ -109,11 +96,11 @@ class MusicControlView(discord.ui.View):
     @discord.ui.button(label="🔊+", style=discord.ButtonStyle.secondary)
     async def vol_up(self, i: discord.Interaction, b: discord.ui.Button):
         await i.response.defer()
-        if self.ctx.guild.id in current_songs: 
+        if self.ctx.guild.id in current_songs:
             current_songs[self.ctx.guild.id].volume = min(2.0, current_songs[self.ctx.guild.id].volume + 0.2)
 
     @discord.ui.button(label="⏭️", style=discord.ButtonStyle.secondary)
-    async def skip_btn(self, i: discord.Interaction, b: discord.ui.Button): 
+    async def skip_btn(self, i: discord.Interaction, b: discord.ui.Button):
         await i.response.defer()
         if self.ctx.voice_client: self.ctx.voice_client.stop()
 
@@ -125,10 +112,10 @@ async def on_ready():
 async def on_voice_state_update(member, before, after):
     guild = member.guild
     vc = guild.voice_client
-    if not vc: 
+    if not vc:
         return
     if member.id == bot.user.id and after.channel is None and before.channel is not None:
-        if manual_leave.get(guild.id, False): 
+        if manual_leave.get(guild.id, False):
             manual_leave[guild.id] = False
             return
         if guild.id in persistent_channels or guild.id in current_songs or guild.id in music_queues:
@@ -147,101 +134,96 @@ async def on_voice_state_update(member, before, after):
 
 @bot.event
 async def on_message(message):
-    if message.author.bot: 
+    if message.author.bot:
         return
         
     msg_clean = message.content.strip().lower()
+    g_id = message.guild.id
     
-    # 🌟 FIXED INDEPENDENT COME OVERRIDE SYSTEM
+    # 🌟 ULTIMATE LOOP-PROOF DISCONNECT-FIRST COME ROUTINE
     if (bot.user.mentioned_in(message) or "bot" in msg_clean) and "come" in msg_clean:
         if message.author.voice:
-            g_id = message.guild.id
-            manual_leave[g_id] = False
-            if message.guild.voice_client: 
-                manual_leave[g_id] = True # Grants clearance code to transition safely
-                await message.guild.voice_client.move_to(message.author.voice.channel)
+            manual_leave[g_id] = True  # Safely mute the auto-reconnect logic
+            if message.guild.voice_client:
+                await message.guild.voice_client.disconnect(force=True)
                 await asyncio.sleep(0.5)
-                manual_leave[g_id] = False
-            else: 
-                await message.author.voice.channel.connect()
+            await message.author.voice.channel.connect()
+            manual_leave[g_id] = False  # Reactivate sticky protection shield
             await message.add_reaction("✅")
         return
 
-
     parts = message.content.strip().split(maxsplit=1)
-    if not parts: 
+    if not parts:
         return
         
-    cmd = parts[0].lower()
-    args = parts[1] if len(parts) > 1 else ""
+    cmd = parts.lower()
+    args = parts if len(parts) > 1 else ""
     ctx = await bot.get_context(message)
     
     if "setup" in cmd and bot.user.mentioned_in(message):
         if message.author.voice:
-            manual_leave[message.guild.id] = False
-            persistent_channels[message.guild.id] = message.author.voice.channel
-            if message.guild.voice_client: 
+            manual_leave[g_id] = False
+            persistent_channels[g_id] = message.author.voice.channel
+            if message.guild.voice_client:
                 await message.guild.voice_client.move_to(message.author.voice.channel)
-            else: 
+            else:
                 await message.author.voice.channel.connect()
             await ctx.send(f"🔒 **24/7 Setup Activated** in **{message.author.voice.channel.name}**.")
         return
 
     if cmd in ["p", "ش"]:
-        if not args: 
+        if not args:
             return await ctx.send("Type a song name after the command!")
-        if not ctx.author.voice: 
+        if not ctx.author.voice:
             return await ctx.send("Join a voice room first!")
-        if not ctx.voice_client: 
+        if not ctx.voice_client:
             await ctx.author.voice.channel.connect()
-        g_id = ctx.guild.id
         manual_leave[g_id] = False
         music_queues.setdefault(g_id, [])
         try:
             player = await YTDLSource.from_url(args, user=ctx.author)
-            if ctx.voice_client.is_playing() or ctx.voice_client.is_paused(): 
+            if ctx.voice_client.is_playing() or ctx.voice_client.is_paused():
                 music_queues[g_id].append(player)
                 await ctx.send(f"📋 Added to queue: **{player.title}**")
-            else: 
+            else:
                 current_songs[g_id] = player
                 ctx.voice_client.play(player, after=lambda e: play_next(ctx))
                 await ctx.send(embed=create_music_embed(player), view=MusicControlView(ctx))
-        except Exception as e: 
+        except Exception as e:
             await ctx.send(f"Error: {e}")
         return
 
     if cmd in ["s", "س"]:
-        if ctx.voice_client and ctx.voice_client.is_playing(): 
+        if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.stop()
             await message.add_reaction("⏭️")
         return
 
     if cmd in ["stop", "pause", "وقف"]:
-        if ctx.voice_client and ctx.voice_client.is_playing(): 
+        if ctx.voice_client and ctx.voice_client.is_playing():
             ctx.voice_client.pause()
             await message.add_reaction("⏸️")
         return
 
     if cmd in ["con", "continue", "resume", "كمل"]:
-        if ctx.voice_client and ctx.voice_client.is_paused(): 
+        if ctx.voice_client and ctx.voice_client.is_paused():
             ctx.voice_client.resume()
             await message.add_reaction("▶️")
         return
 
     if cmd == "v":
-        if ctx.voice_client and ctx.guild.id in current_songs:
+        if ctx.voice_client and g_id in current_songs:
             match = re.search(r'\d+', args)
             vol = int(match.group()) if match else 100
-            if 0 <= vol <= 200: 
-                current_songs[ctx.guild.id].volume = vol / 100
+            if 0 <= vol <= 200:
+                current_songs[g_id].volume = vol / 100
                 await message.add_reaction("🔊")
-            else: 
+            else:
                 await ctx.send("Volume range must be between 0 and 200.")
         return
 
     if cmd in ["leave", "خروج"]:
         if ctx.voice_client and ctx.author.voice and ctx.author.voice.channel == ctx.voice_client.channel:
-            g_id = ctx.guild.id
             music_queues.pop(g_id, None)
             current_songs.pop(g_id, None)
             persistent_channels.pop(g_id, None)
@@ -262,3 +244,4 @@ async def leave_cmd(ctx): pass
 if __name__ == '__main__':
     Thread(target=run_web_server).start()
     bot.run(os.environ.get("DISCORD_TOKEN"))
+
